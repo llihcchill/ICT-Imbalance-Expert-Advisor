@@ -7,12 +7,12 @@
 #define HR2400 86400
 #define SECONDS uint
 
+// settings
 input string      RISK_MANAGEMENT_SETTINGS;
 input double      lot_size;
 input int         bars_look_back;
-// do you want accumulating of positions on a trade or not
-// multiple entries open at once
 
+// global variables
 double shortFirstBarLow;
 double shortFirstBarHigh;
 double shortThirdBarHigh;
@@ -34,6 +34,7 @@ int longOrShort = 3;
 datetime shortBeginningCandleTime;
 datetime longBeginningCandleTime;
 
+// returns the time in GMT in seconds
 SECONDS time(datetime when = 0) {
    return SECONDS(when == 0 ? TimeCurrent() : when) % HR2400;
 }
@@ -45,24 +46,28 @@ bool isValidTime(SECONDS start, SECONDS end, datetime when = 0) {
    return start < end ? start <= now && now < end : !isValidTime(end, start, when);
 }
 
+// returns true if it finds a short imbalance
 bool isImbalanceShort(bool sa = false) {
    // set the chart to 1 min to get precise entries
    ChartSetSymbolPeriod(0, NULL, PERIOD_M1);
-   // Store a reference to the first bar
+   
+   // store a reference to the first bar
    shortBeginningCandleTime = TimeCurrent();
    
-   // Store the high of the first bar
+   // store the high of the first bar
    shortFirstBarLow  = iLow(NULL, 0, 1);
    
-   // Store the low of the third bar
+   // store the low of the third bar
    shortThirdBarHigh = iHigh(NULL, 0, 3);
    
    return shortFirstBarLow > shortThirdBarHigh ? sa = true : sa = false;
 }
 
+// returns true if it finds a long imbalance
 bool isImbalanceLong(bool la = false) {
    // set the chart to 1 min to get precise entries
    ChartSetSymbolPeriod(0, NULL, PERIOD_M1);
+   
    // store a reference to the first candle
    longBeginningCandleTime = TimeCurrent();
    
@@ -75,12 +80,14 @@ bool isImbalanceLong(bool la = false) {
    return longFirstBarHigh < longThirdBarLow ? la = true : la = false;
 }
 
+// returns true or false if the short imbalance has been entered
 bool isImbalanaceShortEntered(bool sb = false) {
    // set the chart to 1 min to get precise entries
    ChartSetSymbolPeriod(0, NULL, PERIOD_M1);
    return iClose(NULL, 0, 1) > shortThirdBarLow && iClose(NULL, 0, 3) < shortFirstBarHigh ? sb = true : sb = false;
 }
 
+// returns true or false is the long imbalance has been entered
 bool isImbalanceLongEntered(bool lb = false) {
    // set the chart to 1 min to get precise entries
    ChartSetSymbolPeriod(0, NULL, PERIOD_M1);
@@ -90,11 +97,10 @@ bool isImbalanceLongEntered(bool lb = false) {
 void stopOrderAction(int x, double tbl, double fbl, double tbh, double fbh)
 {
    printf("at stop order action");
-// Place a limit order at the first bar's low
+   // place a limit order at the first bar's low
    MqlTradeRequest stopOrderRequest;
    MqlTradeResult  stopOrderResult;
 
-// Make stop order
    ulong OrderTicket             = OrderGetTicket(1);
    stopOrderRequest.symbol       = Symbol();
    stopOrderRequest.order        = OrderTicket;
@@ -115,11 +121,10 @@ void stopOrderAction(int x, double tbl, double fbl, double tbh, double fbh)
       stopOrderRequest.sl     = fbh + 5 * Point();
    }
    // send the order with the inputs above
-   printf(OrderSend(stopOrderRequest, stopOrderResult));
    OrderSend(stopOrderRequest, stopOrderResult);
 }
 
-// Make order ticket for use in cancelling the stop order if it doens't get triggered
+// makes order ticket for use in cancelling the stop order if it doesn't get triggered
 void removeStopOrder()
 {
    MqlTradeRequest removeOrderRequest;
@@ -142,10 +147,9 @@ void entry()
          shortImbalanceStorage = shortImbalanceStorage + 1;
       }
    }
-   printf("out of for loop");
-   // Check to make sure there are imbalances, and if not do a different calculation for the same bias thing
+   
+   // check to make sure there are imbalances, and if not do a different calculation for the same bias thing
    if((longImbalanceStorage == shortImbalanceStorage) || (longImbalanceStorage == 0 && shortImbalanceStorage == 0)) {
-      printf("no imbalances l");
       // do the check the first candle of the end of the last session to the one before the session now
       if(iClose(NULL, 0, 12) < iClose(NULL, 0, 1)) {
           longImbalanceStorage = longImbalanceStorage + 1;
@@ -153,35 +157,25 @@ void entry()
          shortImbalanceStorage = shortImbalanceStorage + 1;
       }
    }
-   printf("got past the check for the case of no imbalances or equal");
+   
+   // see if more short imbalances have been found and then find an entry in the opposite direction
    if(longImbalanceStorage < shortImbalanceStorage) {
-      //see if imbalance has been found and if there is an entry on it
       while(isValidTime(HR0800, HR0805) && isLongEntry == false) {
-         printf("is in while loop");
          if(isImbalanceLong() == true && isImbalanceLongEntered() == true) {
             longOrShort = 1;
             stopOrderAction(longOrShort, longThirdBarLow, longFirstBarLow, longThirdBarHigh, longFirstBarHigh);
             isLongEntry = true;
          }
       }
-      printf("just out of the while loop");
    } else if(longImbalanceStorage > shortImbalanceStorage) {
-      //see if an imbalance has been found and if there is an entry on it
+      // see if more long imbalances have been found and then find an entry in the opposite direction
       while(isValidTime(HR0800, HR0805) && isShortEntry == false) {
-         printf("is in while loop");
          if(isImbalanceShort() == true && isImbalanaceShortEntered() == true) {
             longOrShort = 2;
             stopOrderAction(longOrShort, shortThirdBarLow, shortFirstBarLow, shortThirdBarHigh, shortFirstBarHigh);
             isShortEntry = true;
          }
-         // do stuff when there's an imbalance in the opposite direction
-         if(isImbalanceLong(false) == true) {
-         // put stop loss at 61% fibonacci level from the first imbalance bar low to the highest high
-            //again could counter enter
-            isShortEntry = true;
-         }
       }
-      printf("just out of the while loop");
    }
    // reset these variables
    shortImbalanceStorage = 0;
@@ -190,63 +184,31 @@ void entry()
    newYorkReset = true;
 }
 
-
-// OVERALL STRATEGY //
-
-// strategy number 1:
-// at london and new york opening, check whether the first candle has closed upwards or downwards
-// log the low of the candle if it closed upwards or the high if it closed downwards
-// if (it goes beyond the low/high of the candle move the bias to the opposite direction) {and look for imbalance entry there};
-// check if price sweeps the highs/lows of the fractals in the initial direction
-// if (two of them get sweeped) {look for imbalance entry};
-
-// strategy i'll use in this one:
-// at london opening, get the close of the first candle out of asia and the candle before london open and compare them
-// if the candle before london session closes under the close of the asia candle, make a bias for a long
-// wait until there is either an imbalance to the downside when london opens, or to the upside, which is when you should look for an
-// imbalance entry 
-
-// ONE EXIT STRATEGY
-// when it's the end of a trading session, find the low/high of the session and when a candle breaks below it, close the trade when the candle that 
-// went past the high/low closes
-
-// TREND CONTINUATION ENTRY
-// first look for imbalances between sessions
-// if there are lots of downside imbalances, bias is upside
-// vice versa if there are lots of upside imbalances, bias is downside
-//    if there are no imbalances, take the candle from the end of the previous session and the one before the start of the new session
-// once the bias is established, you can just 
-
-// TREND REVERSAL ENTRY
-
-// also develop the other 1hr london session strategy as a varation on this one
-
-
 void OnInit()
 {
+   // sets the timeframe to the 5 minute
    ChartSetSymbolPeriod(0, NULL, PERIOD_M5);
 }
 
 void OnTick()
 {
-   //######################################################################################
-   //#### another thing to add is when there's an imbalance in the opposite direction, ####
-   //#### if the next candle engulfs the entire imbalance, a trade should be exited    ####
-   //######################################################################################
+   // when it approcahes london session, it can start to find an entry
    if(isValidTime(HR0800, HR0805)) {
       if(londonReset == false) {
-         printf("u o bri'i'sh people");
          entry();
+         newYorkReset = false;
       }
    }
    
+   // when it approaches new york session, it can start to find an entry
    if(isValidTime(HR1300, HR1305)) {
       if(newYorkReset == false) {
-         printf("o no not new york people");
          entry();
+         londonReset = false;
       }
    }
    
+   // finds when a long trade has been opened and it manages stop loss and what to do if prices reverse
    if(isLongEntry == true) {
       // remove entry if price doesn't enter it within 6 bars
       if(iBarShift(Symbol(), 0, shortBeginningCandleTime, true) == 6) {
@@ -254,13 +216,12 @@ void OnTick()
          isLongEntry = false;
       }
       if(iLow(NULL, 0, 1) > iHigh(NULL, 0, 3)) {
-         //put stop loss at 61% fibonacci level from the first imbalance bar high and the lowest low
          printf("went opposite imbalance :(");
          isLongEntry = false;
-         // possibly could counter entry? but idk
       }
    }
    
+   // finds when a short trade has been opened and it manages stop loss and what to do if prices reverse
    if(isShortEntry == true) {
       if(iBarShift(Symbol(), 0, shortBeginningCandleTime, true) == 6) {
          removeStopOrder();
@@ -272,103 +233,8 @@ void OnTick()
    }
 }
 
+// remove stop order just in case, should probably also close the position as well
 void OnDeinit(const int reason)
 {
    removeStopOrder();
 }
-  
-  
-  
-  
-  
- /*
-      // Check if the first and third bar's low and high don't touch each other
-         if(iLow(NULL, 0, 1) > iHigh(NULL, 0, 3)) {
-            // Place a buy stop order
-            // Reference a bar to detect how long it's been
-            datetime BeginningCandleTime = TimeCurrent();
-
-            // Store the low of the first bar
-            double LongFirstBarLow = iLow(NULL, 0, 1);
-            double LongFirstBarHigh = iHigh(NULL, 0, 1);
-
-            // Store the high and low of the third bar
-            double LongThirdBarHigh = iHigh(NULL, 0, 3);
-            double LongThirdBarLow = iLow(NULL, 0, 3);
-
-            printf("did the lows and highs thingies chetk");
-
-            // Check if the price goes back in between the first and third bar's low and high
-            if(iClose(NULL, 0, 1) > LongFirstBarHigh && iClose(NULL, 0, 1) < LongThirdBarLow) {
-               longOrShort = 1;
-               //StopOrderAction(longOrShort);
-
-               printf("should have placed order rn");
-
-               // Do an if statement that checks whether price goes below the low or high of the imbalance,
-               // and if so cancel the order and set imbalance found to 3
-               if(iClose(NULL, 0, 1) <= LongFirstBarLow) {
-                  removeStopOrder();
-                  printf("should have removed order by now");
-               }
-                  //ObjectCreate(0, "Stop Order", OBJ_HLINE, 0, 0, LongThirdBarLow);
-
-               // Cancel the order after a number of candles
-               if(iBarShift(Symbol(), 0, BeginningCandleTime, true) == 6) {
-                  removeStopOrder();
-                  printf("should have also removed order by now");
-               }
-            }
-         }
-         */
-
-/*
-void HighsAndLows()
-{
-   for(int i = 0; i < bars_look_back; i++) {
-      int j = i - 1;
-      int h = i + 1;
-      bool isBacklookingDone  = false;
-      double fractalLeftHigh  = iHigh(NULL, 0, h);
-      double fractalLeftLow   = iLow(NULL, 0, h);
-      double fractalLeftClose = iClose(NULL, 0, h);
-      double fractalLeftOpen  = iOpen(NULL, 0, h);
-      
-      double fractalMiddleHigh  = iHigh(NULL, 0, i);
-      double fractalMiddleLow   = iLow(NULL, 0, i);
-      
-      double fractalRightHigh  = iHigh(NULL, 0, j);
-      double fractalRightLow   = iLow(NULL, 0, j);
-      double fractalRightClose = iClose(NULL, 0, j);
-      double fractalRightOpen  = iOpen(NULL, 0, j);
-      
-      if(fractalLeftClose < fractalLeftOpen && fractalRightClose > fractalRightOpen && fractalMiddleLow > fractalLeftClose && fractalRightClose) {
-         for(int b = 0; b < bars_look_back; b++) {
-            if(iOpen(NULL, 0, b) == fractalMiddleLow) {
-               i = i + 1;
-            }
-         }
-         fractalShortStorage[i] = fractalMiddleLow;
-      }
-      
-      if(fractalLeftClose > fractalLeftOpen && fractalRightClose < fractalRightOpen && fractalMiddleHigh > fractalLeftClose && fractalRightClose) {
-         for(int a = 0; a < bars_look_back; a++) {
-            if(iOpen(NULL, 0, a) == fractalMiddleLow) {
-               i = i + 1;
-            }
-         }
-         fractalShortStorage[i] = fractalMiddleLow;
-      }
-   }
-}
-*/
-
-      /*
-      // Check if the price goes back in between the first and third bar's low and high
-      if(iClose(NULL, 0, 1) > ShortThirdBarHigh && iClose(NULL, 0, 1) < ShortFirstBarLow) {
-         LongOrShort = 2;
-         StopOrderAction(LongOrShort);
-         // Do an if statement that checks whether price goes below the low or high of the imbalance,
-         // and if so cancel the order and set imbalance found to 3
-         
-      }*/
